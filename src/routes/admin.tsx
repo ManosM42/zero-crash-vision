@@ -1,16 +1,9 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useServerFn } from "@tanstack/react-start";
 import { useState } from "react";
 import { Lock, Mail, ArrowLeft, RefreshCw } from "lucide-react";
-import { fetchAdminMessages } from "@/lib/admin.functions";
+import { createClient } from "@supabase/supabase-js";
 
 export const Route = createFileRoute("/admin")({
-  head: () => ({
-    meta: [
-      { title: "Admin — ZEROCRASH" },
-      { name: "robots", content: "noindex,nofollow" },
-    ],
-  }),
   component: AdminPage,
 });
 
@@ -23,8 +16,11 @@ type Message = {
   created_at: string;
 };
 
+const ADMIN_PASSWORD = import.meta.env.VITE_ADMIN_PASSWORD as string;
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string;
+const SUPABASE_SERVICE_KEY = import.meta.env.VITE_SUPABASE_SERVICE_ROLE_KEY as string;
+
 function AdminPage() {
-  const fetchMessages = useServerFn(fetchAdminMessages);
   const [password, setPassword] = useState("");
   const [authed, setAuthed] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -35,11 +31,22 @@ function AdminPage() {
     setLoading(true);
     setError("");
     try {
-      const res = await fetchMessages({ data: { password: pwd } });
-      setMessages(res.messages as Message[]);
+      if (pwd !== ADMIN_PASSWORD) throw new Error("Invalid password");
+
+      const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY, {
+        auth: { autoRefreshToken: false, persistSession: false },
+      });
+
+      const { data, error: dbError } = await supabase
+        .from("contact_messages")
+        .select("*")
+        .order("created_at", { ascending: false });
+
+      if (dbError) throw new Error(dbError.message);
+      setMessages((data as Message[]) ?? []);
       setAuthed(true);
-    } catch (e: any) {
-      setError(e?.message || "Failed to load messages");
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Failed to load messages");
       setAuthed(false);
     } finally {
       setLoading(false);
